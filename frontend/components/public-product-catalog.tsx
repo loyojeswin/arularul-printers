@@ -55,8 +55,10 @@ export function PublicProductCatalog() {
 
   const [activeCategory, setActiveCategory] = useState("All");
   const [sortMode, setSortMode] = useState("featured");
-  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [sheetOffset, setSheetOffset] = useState(0);
+  const [minPriceInput, setMinPriceInput] = useState(0);
+  const [maxPriceInput, setMaxPriceInput] = useState(0);
   const dragStartY = useRef<number | null>(null);
 
   useEffect(() => {
@@ -86,6 +88,20 @@ export function PublicProductCatalog() {
     return Array.from(set);
   }, [products]);
 
+  const priceBounds = useMemo(() => {
+    if (products.length === 0) return { min: 0, max: 0 };
+    const prices = products.map((product) => Number(product.basePrice));
+    return {
+      min: Math.floor(Math.min(...prices)),
+      max: Math.ceil(Math.max(...prices))
+    };
+  }, [products]);
+
+  useEffect(() => {
+    setMinPriceInput(priceBounds.min);
+    setMaxPriceInput(priceBounds.max);
+  }, [priceBounds.min, priceBounds.max]);
+
   const filteredProducts = useMemo(() => {
     let data = [...products];
 
@@ -100,6 +116,11 @@ export function PublicProductCatalog() {
       data = data.filter((product) => detectCategory(product) === activeCategory);
     }
 
+    data = data.filter((product) => {
+      const price = Number(product.basePrice);
+      return price >= minPriceInput && price <= maxPriceInput;
+    });
+
     if (sortMode === "price-asc") {
       data.sort((a, b) => Number(a.basePrice) - Number(b.basePrice));
     } else if (sortMode === "price-desc") {
@@ -109,16 +130,16 @@ export function PublicProductCatalog() {
     }
 
     return data;
-  }, [products, searchTerm, activeCategory, sortMode]);
+  }, [products, searchTerm, activeCategory, sortMode, minPriceInput, maxPriceInput]);
 
   useEffect(() => {
-    if (!showMobileFilters) return;
+    if (!showFilters) return;
     const original = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = original;
     };
-  }, [showMobileFilters]);
+  }, [showFilters]);
 
   function requireLogin() {
     if (getToken()) return true;
@@ -149,14 +170,21 @@ export function PublicProductCatalog() {
     writeIds(CART_KEY, nextValues);
   }
 
-  function openMobileFilters() {
+  function openFilters() {
     setSheetOffset(0);
-    setShowMobileFilters(true);
+    setShowFilters(true);
   }
 
-  function closeMobileFilters() {
+  function closeFilters() {
     setSheetOffset(0);
-    setShowMobileFilters(false);
+    setShowFilters(false);
+  }
+
+  function resetFilters() {
+    setActiveCategory("All");
+    setSortMode("featured");
+    setMinPriceInput(priceBounds.min);
+    setMaxPriceInput(priceBounds.max);
   }
 
   function onSheetTouchStart(event: TouchEvent<HTMLDivElement>) {
@@ -172,11 +200,23 @@ export function PublicProductCatalog() {
 
   function onSheetTouchEnd() {
     if (sheetOffset > 120) {
-      closeMobileFilters();
+      closeFilters();
       return;
     }
     setSheetOffset(0);
     dragStartY.current = null;
+  }
+
+  function handleMinInput(value: number) {
+    if (Number.isNaN(value)) return;
+    const clamped = Math.max(priceBounds.min, Math.min(value, maxPriceInput));
+    setMinPriceInput(clamped);
+  }
+
+  function handleMaxInput(value: number) {
+    if (Number.isNaN(value)) return;
+    const clamped = Math.min(priceBounds.max, Math.max(value, minPriceInput));
+    setMaxPriceInput(clamped);
   }
 
   function FiltersPanel() {
@@ -184,20 +224,15 @@ export function PublicProductCatalog() {
       <div className="space-y-4">
         <div>
           <h2 className="text-sm font-bold uppercase tracking-wide text-slate-600">Category</h2>
-          <div className="mt-2 flex flex-wrap gap-2 lg:flex-col">
+          <div className="mt-2 flex flex-wrap gap-2">
             {categories.map((category) => (
               <button
                 key={category}
                 type="button"
                 className={`rounded px-3 py-1 text-left text-sm ${
-                  activeCategory === category
-                    ? "bg-[#2874f0] text-white"
-                    : "border border-slate-300 text-slate-700"
+                  activeCategory === category ? "bg-[#2874f0] text-white" : "border border-slate-300 text-slate-700"
                 }`}
-                onClick={() => {
-                  setActiveCategory(category);
-                  setShowMobileFilters(false);
-                }}
+                onClick={() => setActiveCategory(category)}
               >
                 {category}
               </button>
@@ -210,10 +245,7 @@ export function PublicProductCatalog() {
           <select
             className="mt-2 w-full rounded border p-2 text-sm"
             value={sortMode}
-            onChange={(event) => {
-              setSortMode(event.target.value);
-              setShowMobileFilters(false);
-            }}
+            onChange={(event) => setSortMode(event.target.value)}
           >
             <option value="featured">Featured</option>
             <option value="price-asc">Price: Low to High</option>
@@ -221,50 +253,138 @@ export function PublicProductCatalog() {
             <option value="name-asc">Name: A to Z</option>
           </select>
         </div>
+
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-600">Price Range</h2>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <input
+              type="number"
+              className="rounded border p-2 text-sm"
+              value={minPriceInput}
+              min={priceBounds.min}
+              max={maxPriceInput}
+              onChange={(event) => handleMinInput(Number(event.target.value))}
+            />
+            <input
+              type="number"
+              className="rounded border p-2 text-sm"
+              value={maxPriceInput}
+              min={minPriceInput}
+              max={priceBounds.max}
+              onChange={(event) => handleMaxInput(Number(event.target.value))}
+            />
+          </div>
+          <div className="mt-3 space-y-2">
+            <input
+              type="range"
+              min={priceBounds.min}
+              max={priceBounds.max}
+              value={minPriceInput}
+              onChange={(event) => handleMinInput(Number(event.target.value))}
+              className="w-full"
+            />
+            <input
+              type="range"
+              min={priceBounds.min}
+              max={priceBounds.max}
+              value={maxPriceInput}
+              onChange={(event) => handleMaxInput(Number(event.target.value))}
+              className="w-full"
+            />
+            <p className="text-xs text-slate-600">
+              Rs {minPriceInput} - Rs {maxPriceInput}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button type="button" className="rounded border px-3 py-2 text-sm" onClick={resetFilters}>
+            Reset
+          </button>
+          <button type="button" className="rounded bg-[#2874f0] px-3 py-2 text-sm font-semibold text-white" onClick={closeFilters}>
+            Apply
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
     <section className="space-y-4">
-      <div className="rounded bg-white px-4 py-3 shadow-sm">
-        <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">Explore Products</h1>
-        <p className="text-sm text-slate-600">View all products without login. Actions require login.</p>
-      </div>
-
       {loading ? <p>Loading products...</p> : null}
       {error ? <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p> : null}
 
-      <div className="rounded bg-white px-4 py-3 shadow-sm lg:hidden">
-        <button
-          type="button"
-          className="rounded bg-[#2874f0] px-3 py-2 text-sm font-semibold text-white"
-          onClick={openMobileFilters}
-        >
-          Filter & Sort
-        </button>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between rounded bg-white px-4 py-3 shadow-sm">
+          <p className="text-sm text-slate-700">
+            {filteredProducts.length} products {searchTerm ? `for "${searchTerm}"` : "available"}
+          </p>
+          <button
+            type="button"
+            className="rounded bg-[#2874f0] px-3 py-2 text-sm font-semibold text-white"
+            onClick={openFilters}
+          >
+            Filter & Sort
+          </button>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {filteredProducts.map((product) => (
+            <article key={product.id} className="rounded bg-white p-3 shadow-sm transition hover:shadow-md">
+              <div className="mb-3">
+                <ProductMediaCarousel media={product.media || []} productName={product.name} className="h-48" />
+              </div>
+
+              <Link href={`/products/${product.slug}`} className="line-clamp-1 text-base font-semibold hover:text-[#2874f0]">
+                {product.name}
+              </Link>
+              <p className="mt-1 line-clamp-2 min-h-10 text-sm text-slate-600">{product.description || "No description"}</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">From Rs {Number(product.basePrice).toFixed(2)}</p>
+
+              <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                <button
+                  type="button"
+                  className="rounded border px-2 py-1"
+                  onClick={() => toggleAction(LIKED_KEY, likedIds, setLikedIds, product.id)}
+                >
+                  {likedIds.includes(product.id) ? "Liked" : "Like"}
+                </button>
+                <button
+                  type="button"
+                  className="rounded border px-2 py-1"
+                  onClick={() => toggleAction(SAVED_KEY, savedIds, setSavedIds, product.id)}
+                >
+                  {savedIds.includes(product.id) ? "Saved" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  className="rounded bg-[#fb641b] px-2 py-1 font-semibold text-white"
+                  onClick={() => addToCart(product.id)}
+                >
+                  {cartIds.includes(product.id) ? "In Cart" : "Add"}
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
       </div>
 
-      {showMobileFilters ? (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/40 lg:hidden" onClick={closeMobileFilters}>
+      {showFilters ? (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/40 lg:items-start lg:justify-end" onClick={closeFilters}>
           <div
-            className="w-full rounded-t-2xl bg-white p-4 transition-transform duration-200"
+            className="w-full rounded-t-2xl bg-white p-4 transition-transform duration-200 lg:mr-6 lg:mt-24 lg:max-h-[80vh] lg:w-[360px] lg:overflow-y-auto lg:rounded-2xl"
             style={{ transform: `translateY(${sheetOffset}px)` }}
             onClick={(event) => event.stopPropagation()}
             onTouchStart={onSheetTouchStart}
             onTouchMove={onSheetTouchMove}
             onTouchEnd={onSheetTouchEnd}
           >
-            <div className="mb-2 flex justify-center">
+            <div className="mb-2 flex justify-center lg:hidden">
               <span className="h-1.5 w-12 rounded-full bg-slate-300" />
             </div>
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-lg font-semibold">Filter & Sort</h3>
-              <button
-                type="button"
-                className="rounded border px-2 py-1 text-sm"
-                onClick={closeMobileFilters}
-              >
+              <button type="button" className="rounded border px-2 py-1 text-sm" onClick={closeFilters}>
                 Close
               </button>
             </div>
@@ -272,60 +392,6 @@ export function PublicProductCatalog() {
           </div>
         </div>
       ) : null}
-
-      <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-        <aside className="hidden rounded bg-white p-4 shadow-sm lg:sticky lg:top-28 lg:block lg:h-fit">
-          <FiltersPanel />
-        </aside>
-
-        <div className="space-y-3">
-          <div className="flex items-center justify-between rounded bg-white px-4 py-3 shadow-sm">
-            <p className="text-sm text-slate-700">
-              {filteredProducts.length} products {searchTerm ? `for "${searchTerm}"` : "available"}
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {filteredProducts.map((product) => (
-              <article key={product.id} className="rounded bg-white p-3 shadow-sm transition hover:shadow-md">
-                <div className="mb-3">
-                  <ProductMediaCarousel media={product.media || []} productName={product.name} className="h-48" />
-                </div>
-
-                <Link href={`/products/${product.slug}`} className="line-clamp-1 text-base font-semibold hover:text-[#2874f0]">
-                  {product.name}
-                </Link>
-                <p className="mt-1 line-clamp-2 min-h-10 text-sm text-slate-600">{product.description || "No description"}</p>
-                <p className="mt-2 text-sm font-semibold text-slate-900">From Rs {Number(product.basePrice).toFixed(2)}</p>
-
-                <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                  <button
-                    type="button"
-                    className="rounded border px-2 py-1"
-                    onClick={() => toggleAction(LIKED_KEY, likedIds, setLikedIds, product.id)}
-                  >
-                    {likedIds.includes(product.id) ? "Liked" : "Like"}
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded border px-2 py-1"
-                    onClick={() => toggleAction(SAVED_KEY, savedIds, setSavedIds, product.id)}
-                  >
-                    {savedIds.includes(product.id) ? "Saved" : "Save"}
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded bg-[#fb641b] px-2 py-1 font-semibold text-white"
-                    onClick={() => addToCart(product.id)}
-                  >
-                    {cartIds.includes(product.id) ? "In Cart" : "Add"}
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </div>
-      </div>
     </section>
   );
 }
