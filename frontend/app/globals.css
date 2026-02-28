@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f1f3f6;
+  --text: #172337;
+}
+
+body {
+  font-family: var(--font-manrope), sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
