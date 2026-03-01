@@ -7,6 +7,7 @@ import orderRoutes from "./modules/orders/orders.routes";
 import productRoutes from "./modules/products/products.routes";
 import adminRoutes from "./modules/admin/admin.routes";
 import paymentRoutes from "./modules/payments/payments.routes";
+import offerRoutes from "./modules/offers/offers.routes";
 import { errorHandler } from "./middleware/error-handler";
 
 export const app = express();
@@ -21,6 +22,7 @@ app.get("/health", (_req, res) => res.json({ status: "ok" }));
 app.use("/api/auth", authRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/products", productRoutes);
+app.use("/api/offers", offerRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/payments", paymentRoutes);
 

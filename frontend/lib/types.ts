@@ -76,3 +76,25 @@ export interface RevenueSummary {
   totalRevenue: number;
   orderCount: number;
 }
+
+export interface Offer {
+  id: string;
+  title: string;
+  slug: string;
+  description?: string | null;
+  isActive: boolean;
+  productCount?: number;
+}
+
+export interface AdminOffer {
+  id: string;
+  title: string;
+  slug: string;
+  description?: string | null;
+  isActive: boolean;
+  products: Array<{
+    productId: string;
+    sortOrder: number;
+    product: Product;
+  }>;
+}

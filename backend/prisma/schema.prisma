@@ -65,6 +65,32 @@ model Product {
   pricingOptions PricingOption[]
   orderItems    OrderItem[]
   media         ProductMedia[]
+  offers        OfferProduct[]
+}
+
+model Offer {
+  id            String         @id @default(cuid())
+  title         String
+  slug          String         @unique
+  description   String?
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  products      OfferProduct[]
+}
+
+model OfferProduct {
+  offerId       String
+  productId     String
+  sortOrder     Int            @default(0)
+
+  offer         Offer          @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  product       Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([offerId, productId])
+  @@index([offerId, sortOrder])
+  @@index([productId])
 }
 
 model ProductMedia {

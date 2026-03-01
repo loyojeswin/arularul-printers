@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { getToken } from "@/lib/auth";
-import { Product } from "@/lib/types";
+import { Offer, Product } from "@/lib/types";
 import { ProductMediaCarousel } from "@/components/product-media-carousel";
 
 const LIKED_KEY = "arul_liked_products";
@@ -47,6 +47,7 @@ export function PublicProductCatalog() {
   const params = useSearchParams();
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [activeOffer, setActiveOffer] = useState<Offer | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [likedIds, setLikedIds] = useState<string[]>([]);
@@ -61,24 +62,37 @@ export function PublicProductCatalog() {
   const [maxPriceInput, setMaxPriceInput] = useState(0);
   const dragStartY = useRef<number | null>(null);
 
+  const offerSlug = params.get("offer");
+
   useEffect(() => {
     setLikedIds(readIds(LIKED_KEY));
     setSavedIds(readIds(SAVED_KEY));
     setCartIds(readIds(CART_KEY));
 
     async function loadProducts() {
+      setLoading(true);
+      setError(null);
       try {
-        const data = await apiFetch<Product[]>("/products");
-        setProducts(data);
+        if (offerSlug) {
+          const data = await apiFetch<{ offer: Offer; products: Product[] }>(`/offers/${offerSlug}/products`);
+          setProducts(data.products);
+          setActiveOffer(data.offer);
+        } else {
+          const data = await apiFetch<Product[]>("/products");
+          setProducts(data);
+          setActiveOffer(null);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load products");
+        setProducts([]);
+        setActiveOffer(null);
       } finally {
         setLoading(false);
       }
     }
 
     void loadProducts();
-  }, []);
+  }, [offerSlug]);
 
   const searchTerm = (params.get("search") || "").toLowerCase().trim();
 
@@ -317,7 +331,8 @@ export function PublicProductCatalog() {
       <div className="space-y-3">
         <div className="flex items-center justify-between rounded bg-white px-4 py-3 shadow-sm">
           <p className="text-sm text-slate-700">
-            {filteredProducts.length} products {searchTerm ? `for "${searchTerm}"` : "available"}
+            {filteredProducts.length} products{" "}
+            {activeOffer ? `in offer "${activeOffer.title}"` : searchTerm ? `for "${searchTerm}"` : "available"}
           </p>
           <button
             type="button"

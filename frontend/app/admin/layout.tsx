@@ -9,6 +9,7 @@ import { getStoredUser, getToken } from "@/lib/auth";
 const adminMenu = [
   { label: "Dashboard", href: "/admin" },
   { label: "Products", href: "/admin/products" },
+  { label: "Offers", href: "/admin/offers" },
   { label: "Orders", href: "/admin/orders" }
 ] as const;
 

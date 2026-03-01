@@ -2,7 +2,12 @@ import { Request, Response } from "express";
 import { OrderStatus, Prisma, ProductMediaType } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { HttpError } from "../../utils/http-error";
-import { createProductSchema, updateProductSchema } from "./admin.validation";
+import {
+  createOfferSchema,
+  createProductSchema,
+  updateOfferSchema,
+  updateProductSchema
+} from "./admin.validation";
 import fs from "fs";
 import path from "path";
 import { env } from "../../config/env";
@@ -160,4 +165,122 @@ export async function deleteProductMedia(req: Request, res: Response) {
   await prisma.productMedia.delete({ where: { id: media.id } });
 
   return res.json({ message: "Media deleted", mediaId: media.id });
+}
+
+export async function getAllOffers(_req: Request, res: Response) {
+  const offers = await prisma.offer.findMany({
+    include: {
+      products: {
+        orderBy: { sortOrder: "asc" },
+        include: {
+          product: {
+            include: { media: { orderBy: { sortOrder: "asc" } } }
+          }
+        }
+      }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+
+  return res.json(offers);
+}
+
+export async function createOffer(req: Request, res: Response) {
+  const parsed = createOfferSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new HttpError(400, parsed.error.errors[0]?.message || "Invalid offer payload");
+  }
+
+  const existing = await prisma.offer.findUnique({ where: { slug: parsed.data.slug } });
+  if (existing) {
+    throw new HttpError(409, "Offer slug already in use");
+  }
+
+  const offer = await prisma.offer.create({
+    data: {
+      title: parsed.data.title,
+      slug: parsed.data.slug,
+      description: parsed.data.description,
+      isActive: parsed.data.isActive ?? true,
+      products: {
+        create: parsed.data.productIds.map((productId, index) => ({
+          productId,
+          sortOrder: index
+        }))
+      }
+    },
+    include: {
+      products: {
+        orderBy: { sortOrder: "asc" },
+        include: {
+          product: {
+            include: { media: { orderBy: { sortOrder: "asc" } } }
+          }
+        }
+      }
+    }
+  });
+
+  return res.status(201).json(offer);
+}
+
+export async function updateOffer(req: Request, res: Response) {
+  const parsed = updateOfferSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new HttpError(400, parsed.error.errors[0]?.message || "Invalid offer payload");
+  }
+  if (Object.keys(parsed.data).length === 0) {
+    throw new HttpError(400, "No fields provided for update");
+  }
+
+  if (parsed.data.slug) {
+    const slugOwner = await prisma.offer.findUnique({ where: { slug: parsed.data.slug } });
+    if (slugOwner && slugOwner.id !== req.params.offerId) {
+      throw new HttpError(409, "Offer slug already in use");
+    }
+  }
+
+  if (parsed.data.productIds) {
+    await prisma.offerProduct.deleteMany({ where: { offerId: req.params.offerId } });
+    if (parsed.data.productIds.length > 0) {
+      await prisma.offerProduct.createMany({
+        data: parsed.data.productIds.map((productId, index) => ({
+          offerId: req.params.offerId,
+          productId,
+          sortOrder: index
+        }))
+      });
+    }
+  }
+
+  const offer = await prisma.offer.update({
+    where: { id: req.params.offerId },
+    data: {
+      ...(parsed.data.title !== undefined ? { title: parsed.data.title } : {}),
+      ...(parsed.data.slug !== undefined ? { slug: parsed.data.slug } : {}),
+      ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
+      ...(parsed.data.isActive !== undefined ? { isActive: parsed.data.isActive } : {})
+    },
+    include: {
+      products: {
+        orderBy: { sortOrder: "asc" },
+        include: {
+          product: {
+            include: { media: { orderBy: { sortOrder: "asc" } } }
+          }
+        }
+      }
+    }
+  });
+
+  return res.json(offer);
+}
+
+export async function deleteOffer(req: Request, res: Response) {
+  const offer = await prisma.offer.update({
+    where: { id: req.params.offerId },
+    data: { isActive: false }
+  });
+
+  return res.json({ message: "Offer deactivated", offerId: offer.id });
 }
