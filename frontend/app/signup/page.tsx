@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
-import { setAuthSession } from "@/lib/auth";
+import { notifyAuthChange } from "@/lib/auth";
 import { AuthResponse } from "@/lib/types";
 
 export default function SignupPage() {
@@ -24,11 +24,11 @@ export default function SignupPage() {
     setError(null);
 
     try {
-      const result = await apiFetch<AuthResponse>("/auth/signup", {
+      await apiFetch<AuthResponse>("/auth/signup", {
         method: "POST",
         body: JSON.stringify(formData)
       });
-      setAuthSession(result.token, result.user);
+      notifyAuthChange();
       router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Signup failed");

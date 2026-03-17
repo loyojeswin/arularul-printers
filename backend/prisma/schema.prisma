@@ -30,6 +30,8 @@ enum PaymentStatus {
 enum PaymentProvider {
   RAZORPAY
   CASH
+  CARD
+  UPI
   BANK_TRANSFER
 }
 
@@ -50,6 +52,27 @@ model User {
   updatedAt     DateTime  @updatedAt
 
   orders        Order[]
+  addresses     Address[]
+  likes         UserProductLike[]
+  cartItems     CartItem[]
+}
+
+model Address {
+  id            String    @id @default(cuid())
+  userId        String
+  label         String
+  fullAddress   String
+  city          String
+  pincode       String?
+  phone         String?
+  isDefault     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isDefault])
+  @@index([userId, createdAt])
 }
 
 model Product {
@@ -66,6 +89,8 @@ model Product {
   orderItems    OrderItem[]
   media         ProductMedia[]
   offers        OfferProduct[]
+  likes         UserProductLike[]
+  cartItems     CartItem[]
 }
 
 model Offer {
@@ -91,6 +116,34 @@ model OfferProduct {
   @@id([offerId, productId])
   @@index([offerId, sortOrder])
   @@index([productId])
+}
+
+model UserProductLike {
+  id         String   @id @default(cuid())
+  userId     String
+  productId  String
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId, createdAt])
+}
+
+model CartItem {
+  id         String   @id @default(cuid())
+  userId     String
+  productId  String
+  quantity   Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId, createdAt])
 }
 
 model ProductMedia {

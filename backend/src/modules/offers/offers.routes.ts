@@ -8,3 +8,4 @@ router.get("/", asyncHandler(listOffers));
 router.get("/:slug/products", asyncHandler(getOfferProducts));
 
 export default router;
+ 

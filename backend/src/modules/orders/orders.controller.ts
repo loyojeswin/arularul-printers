@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { Prisma } from "@prisma/client";
+import { PaymentProvider, Prisma } from "@prisma/client";
 import { prisma } from "../../config/prisma";
 import { HttpError } from "../../utils/http-error";
 import { calculatePrice } from "../../utils/price";
@@ -75,6 +75,12 @@ export async function createOrder(req: Request, res: Response) {
   const subtotal = itemRows.reduce((acc, row) => acc + toNumber(row.lineTotal), 0);
   const taxAmount = itemRows.reduce((acc, row) => acc + row.lineTax, 0);
   const totalAmount = subtotal + taxAmount;
+  const paymentProviderMap: Record<"CASH" | "CARD" | "UPI", PaymentProvider> = {
+    CASH: PaymentProvider.CASH,
+    CARD: PaymentProvider.CARD,
+    UPI: PaymentProvider.UPI
+  };
+  const provider = paymentProviderMap[parsed.data.paymentMode || "UPI"];
 
   const order = await prisma.order.create({
     data: {
@@ -90,7 +96,7 @@ export async function createOrder(req: Request, res: Response) {
       payment: {
         create: {
           amount: new Prisma.Decimal(totalAmount),
-          provider: "RAZORPAY",
+          provider,
           status: "PENDING"
         }
       }

@@ -46,6 +46,9 @@ Production-ready starter for B2B + B2C printing orders.
 - Admin order status + revenue summary endpoint
 - Admin product CRUD (create, edit, deactivate/activate)
 - Admin product media upload (multiple images/videos per product)
+- Likes/Saves/Cart persisted in PostgreSQL (no localStorage cart data)
+- Auth uses HttpOnly cookie (`/api/auth/login` sets cookie, `/api/auth/logout` clears it)
+- Product actions: Like + Add to cart (Save removed)
 
 ## Seeded Admin Account
 - Email: `admin@arulprinters.com`

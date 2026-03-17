@@ -4,13 +4,16 @@ import { TouchEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "@/lib/api";
-import { getToken } from "@/lib/auth";
-import { Offer, Product } from "@/lib/types";
+import { Product } from "@/lib/types";
 import { ProductMediaCarousel } from "@/components/product-media-carousel";
-
-const LIKED_KEY = "arul_liked_products";
-const SAVED_KEY = "arul_saved_products";
-const CART_KEY = "arul_cart_products";
+import {
+  addLike,
+  fetchCart,
+  fetchLikes,
+  removeLike,
+  upsertCartItem
+} from "@/lib/user-data";
+import { fetchProfile } from "@/lib/auth";
 
 const categoryMatchers: Record<string, RegExp> = {
   "Business Prints": /(card|brochure|flyer|corporate|letterhead|sticker)/i,
@@ -25,74 +28,61 @@ function detectCategory(product: Product) {
   return match?.[0] || "Others";
 }
 
-function readIds(key: string): string[] {
-  if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem(key);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw) as string[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeIds(key: string, values: string[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(key, JSON.stringify(values));
-}
-
 export function PublicProductCatalog() {
   const router = useRouter();
   const params = useSearchParams();
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [activeOffer, setActiveOffer] = useState<Offer | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [likedIds, setLikedIds] = useState<string[]>([]);
-  const [savedIds, setSavedIds] = useState<string[]>([]);
   const [cartIds, setCartIds] = useState<string[]>([]);
+  const [isAuthed, setIsAuthed] = useState(false);
 
   const [activeCategory, setActiveCategory] = useState("All");
   const [sortMode, setSortMode] = useState("featured");
-  const [showFilters, setShowFilters] = useState(false);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [sheetOffset, setSheetOffset] = useState(0);
-  const [minPriceInput, setMinPriceInput] = useState(0);
-  const [maxPriceInput, setMaxPriceInput] = useState(0);
   const dragStartY = useRef<number | null>(null);
 
-  const offerSlug = params.get("offer");
-
   useEffect(() => {
-    setLikedIds(readIds(LIKED_KEY));
-    setSavedIds(readIds(SAVED_KEY));
-    setCartIds(readIds(CART_KEY));
-
     async function loadProducts() {
-      setLoading(true);
-      setError(null);
       try {
-        if (offerSlug) {
-          const data = await apiFetch<{ offer: Offer; products: Product[] }>(`/offers/${offerSlug}/products`);
-          setProducts(data.products);
-          setActiveOffer(data.offer);
-        } else {
-          const data = await apiFetch<Product[]>("/products");
-          setProducts(data);
-          setActiveOffer(null);
-        }
+        const data = await apiFetch<Product[]>("/products");
+        setProducts(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load products");
-        setProducts([]);
-        setActiveOffer(null);
       } finally {
         setLoading(false);
       }
     }
 
     void loadProducts();
-  }, [offerSlug]);
+  }, []);
+
+  useEffect(() => {
+    async function loadUserLists() {
+      try {
+        await fetchProfile();
+        setIsAuthed(true);
+      } catch {
+        setIsAuthed(false);
+        setLikedIds([]);
+        setCartIds([]);
+        return;
+      }
+
+      try {
+        const [likes, cart] = await Promise.all([fetchLikes(), fetchCart()]);
+        setLikedIds(likes);
+        setCartIds(cart.map((item) => item.productId));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load user data");
+      }
+    }
+
+    void loadUserLists();
+  }, []);
 
   const searchTerm = (params.get("search") || "").toLowerCase().trim();
 
@@ -101,20 +91,6 @@ export function PublicProductCatalog() {
     products.forEach((product) => set.add(detectCategory(product)));
     return Array.from(set);
   }, [products]);
-
-  const priceBounds = useMemo(() => {
-    if (products.length === 0) return { min: 0, max: 0 };
-    const prices = products.map((product) => Number(product.basePrice));
-    return {
-      min: Math.floor(Math.min(...prices)),
-      max: Math.ceil(Math.max(...prices))
-    };
-  }, [products]);
-
-  useEffect(() => {
-    setMinPriceInput(priceBounds.min);
-    setMaxPriceInput(priceBounds.max);
-  }, [priceBounds.min, priceBounds.max]);
 
   const filteredProducts = useMemo(() => {
     let data = [...products];
@@ -130,11 +106,6 @@ export function PublicProductCatalog() {
       data = data.filter((product) => detectCategory(product) === activeCategory);
     }
 
-    data = data.filter((product) => {
-      const price = Number(product.basePrice);
-      return price >= minPriceInput && price <= maxPriceInput;
-    });
-
     if (sortMode === "price-asc") {
       data.sort((a, b) => Number(a.basePrice) - Number(b.basePrice));
     } else if (sortMode === "price-desc") {
@@ -144,61 +115,50 @@ export function PublicProductCatalog() {
     }
 
     return data;
-  }, [products, searchTerm, activeCategory, sortMode, minPriceInput, maxPriceInput]);
+  }, [products, searchTerm, activeCategory, sortMode]);
 
   useEffect(() => {
-    if (!showFilters) return;
+    if (!showMobileFilters) return;
     const original = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = original;
     };
-  }, [showFilters]);
+  }, [showMobileFilters]);
 
   function requireLogin() {
-    if (getToken()) return true;
-    setError("Please login to use like/save/cart actions");
+    if (isAuthed) return true;
+    setError("Please login to use like/cart actions");
     router.push("/login");
     return false;
   }
 
-  function toggleAction(
-    key: string,
-    currentValues: string[],
-    setValues: (values: string[]) => void,
-    productId: string
-  ) {
+  async function toggleLike(productId: string) {
     if (!requireLogin()) return;
-    const nextValues = currentValues.includes(productId)
-      ? currentValues.filter((id) => id !== productId)
-      : [...currentValues, productId];
-    setValues(nextValues);
-    writeIds(key, nextValues);
+    if (likedIds.includes(productId)) {
+      await removeLike(productId);
+      setLikedIds((prev) => prev.filter((id) => id !== productId));
+    } else {
+      await addLike(productId);
+      setLikedIds((prev) => [...prev, productId]);
+    }
   }
 
-  function addToCart(productId: string) {
+  async function addToCart(productId: string) {
     if (!requireLogin()) return;
     if (cartIds.includes(productId)) return;
-    const nextValues = [...cartIds, productId];
-    setCartIds(nextValues);
-    writeIds(CART_KEY, nextValues);
+    await upsertCartItem(productId, 1);
+    setCartIds((prev) => [...prev, productId]);
   }
 
-  function openFilters() {
+  function openMobileFilters() {
     setSheetOffset(0);
-    setShowFilters(true);
+    setShowMobileFilters(true);
   }
 
-  function closeFilters() {
+  function closeMobileFilters() {
     setSheetOffset(0);
-    setShowFilters(false);
-  }
-
-  function resetFilters() {
-    setActiveCategory("All");
-    setSortMode("featured");
-    setMinPriceInput(priceBounds.min);
-    setMaxPriceInput(priceBounds.max);
+    setShowMobileFilters(false);
   }
 
   function onSheetTouchStart(event: TouchEvent<HTMLDivElement>) {
@@ -214,23 +174,11 @@ export function PublicProductCatalog() {
 
   function onSheetTouchEnd() {
     if (sheetOffset > 120) {
-      closeFilters();
+      closeMobileFilters();
       return;
     }
     setSheetOffset(0);
     dragStartY.current = null;
-  }
-
-  function handleMinInput(value: number) {
-    if (Number.isNaN(value)) return;
-    const clamped = Math.max(priceBounds.min, Math.min(value, maxPriceInput));
-    setMinPriceInput(clamped);
-  }
-
-  function handleMaxInput(value: number) {
-    if (Number.isNaN(value)) return;
-    const clamped = Math.min(priceBounds.max, Math.max(value, minPriceInput));
-    setMaxPriceInput(clamped);
   }
 
   function FiltersPanel() {
@@ -238,15 +186,20 @@ export function PublicProductCatalog() {
       <div className="space-y-4">
         <div>
           <h2 className="text-sm font-bold uppercase tracking-wide text-slate-600">Category</h2>
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-2 flex flex-wrap gap-2 lg:flex-col">
             {categories.map((category) => (
               <button
                 key={category}
                 type="button"
                 className={`rounded px-3 py-1 text-left text-sm ${
-                  activeCategory === category ? "bg-[#2874f0] text-white" : "border border-slate-300 text-slate-700"
+                  activeCategory === category
+                    ? "bg-[#2874f0] text-white"
+                    : "border border-slate-300 text-slate-700"
                 }`}
-                onClick={() => setActiveCategory(category)}
+                onClick={() => {
+                  setActiveCategory(category);
+                  setShowMobileFilters(false);
+                }}
               >
                 {category}
               </button>
@@ -259,7 +212,10 @@ export function PublicProductCatalog() {
           <select
             className="mt-2 w-full rounded border p-2 text-sm"
             value={sortMode}
-            onChange={(event) => setSortMode(event.target.value)}
+            onChange={(event) => {
+              setSortMode(event.target.value);
+              setShowMobileFilters(false);
+            }}
           >
             <option value="featured">Featured</option>
             <option value="price-asc">Price: Low to High</option>
@@ -267,139 +223,46 @@ export function PublicProductCatalog() {
             <option value="name-asc">Name: A to Z</option>
           </select>
         </div>
-
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-wide text-slate-600">Price Range</h2>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <input
-              type="number"
-              className="rounded border p-2 text-sm"
-              value={minPriceInput}
-              min={priceBounds.min}
-              max={maxPriceInput}
-              onChange={(event) => handleMinInput(Number(event.target.value))}
-            />
-            <input
-              type="number"
-              className="rounded border p-2 text-sm"
-              value={maxPriceInput}
-              min={minPriceInput}
-              max={priceBounds.max}
-              onChange={(event) => handleMaxInput(Number(event.target.value))}
-            />
-          </div>
-          <div className="mt-3 space-y-2">
-            <input
-              type="range"
-              min={priceBounds.min}
-              max={priceBounds.max}
-              value={minPriceInput}
-              onChange={(event) => handleMinInput(Number(event.target.value))}
-              className="w-full"
-            />
-            <input
-              type="range"
-              min={priceBounds.min}
-              max={priceBounds.max}
-              value={maxPriceInput}
-              onChange={(event) => handleMaxInput(Number(event.target.value))}
-              className="w-full"
-            />
-            <p className="text-xs text-slate-600">
-              Rs {minPriceInput} - Rs {maxPriceInput}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex gap-2">
-          <button type="button" className="rounded border px-3 py-2 text-sm" onClick={resetFilters}>
-            Reset
-          </button>
-          <button type="button" className="rounded bg-[#2874f0] px-3 py-2 text-sm font-semibold text-white" onClick={closeFilters}>
-            Apply
-          </button>
-        </div>
       </div>
     );
   }
 
   return (
     <section className="space-y-4">
+      <div className="rounded bg-white px-4 py-3 shadow-sm">
+        <h1 className="text-2xl font-extrabold tracking-tight md:text-3xl">Explore Products</h1>
+        <p className="text-sm text-slate-600">View all products without login. Actions require login.</p>
+      </div>
+
       {loading ? <p>Loading products...</p> : null}
       {error ? <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p> : null}
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between rounded bg-white px-4 py-3 shadow-sm">
-          <p className="text-sm text-slate-700">
-            {filteredProducts.length} products{" "}
-            {activeOffer ? `in offer "${activeOffer.title}"` : searchTerm ? `for "${searchTerm}"` : "available"}
-          </p>
-          <button
-            type="button"
-            className="rounded bg-[#2874f0] px-3 py-2 text-sm font-semibold text-white"
-            onClick={openFilters}
-          >
-            Filter & Sort
-          </button>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {filteredProducts.map((product) => (
-            <article key={product.id} className="rounded bg-white p-3 shadow-sm transition hover:shadow-md">
-              <div className="mb-3">
-                <ProductMediaCarousel media={product.media || []} productName={product.name} className="h-48" />
-              </div>
-
-              <Link href={`/products/${product.slug}`} className="line-clamp-1 text-base font-semibold hover:text-[#2874f0]">
-                {product.name}
-              </Link>
-              <p className="mt-1 line-clamp-2 min-h-10 text-sm text-slate-600">{product.description || "No description"}</p>
-              <p className="mt-2 text-sm font-semibold text-slate-900">From Rs {Number(product.basePrice).toFixed(2)}</p>
-
-              <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                <button
-                  type="button"
-                  className="rounded border px-2 py-1"
-                  onClick={() => toggleAction(LIKED_KEY, likedIds, setLikedIds, product.id)}
-                >
-                  {likedIds.includes(product.id) ? "Liked" : "Like"}
-                </button>
-                <button
-                  type="button"
-                  className="rounded border px-2 py-1"
-                  onClick={() => toggleAction(SAVED_KEY, savedIds, setSavedIds, product.id)}
-                >
-                  {savedIds.includes(product.id) ? "Saved" : "Save"}
-                </button>
-                <button
-                  type="button"
-                  className="rounded bg-[#fb641b] px-2 py-1 font-semibold text-white"
-                  onClick={() => addToCart(product.id)}
-                >
-                  {cartIds.includes(product.id) ? "In Cart" : "Add"}
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
+      <div className="rounded bg-white px-4 py-3 shadow-sm lg:hidden">
+        <button
+          type="button"
+          className="rounded bg-[#2874f0] px-3 py-2 text-sm font-semibold text-white"
+          onClick={openMobileFilters}
+        >
+          Filter & Sort
+        </button>
       </div>
 
-      {showFilters ? (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/40 lg:items-start lg:justify-end" onClick={closeFilters}>
+      {showMobileFilters ? (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/40 lg:hidden" onClick={closeMobileFilters}>
           <div
-            className="w-full rounded-t-2xl bg-white p-4 transition-transform duration-200 lg:mr-6 lg:mt-24 lg:max-h-[80vh] lg:w-[360px] lg:overflow-y-auto lg:rounded-2xl"
+            className="w-full rounded-t-2xl bg-white p-4 transition-transform duration-200"
             style={{ transform: `translateY(${sheetOffset}px)` }}
             onClick={(event) => event.stopPropagation()}
             onTouchStart={onSheetTouchStart}
             onTouchMove={onSheetTouchMove}
             onTouchEnd={onSheetTouchEnd}
           >
-            <div className="mb-2 flex justify-center lg:hidden">
+            <div className="mb-2 flex justify-center">
               <span className="h-1.5 w-12 rounded-full bg-slate-300" />
             </div>
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-lg font-semibold">Filter & Sort</h3>
-              <button type="button" className="rounded border px-2 py-1 text-sm" onClick={closeFilters}>
+              <button type="button" className="rounded border px-2 py-1 text-sm" onClick={closeMobileFilters}>
                 Close
               </button>
             </div>
@@ -407,6 +270,49 @@ export function PublicProductCatalog() {
           </div>
         </div>
       ) : null}
+
+      <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
+        <aside className="hidden rounded bg-white p-4 shadow-sm lg:sticky lg:top-28 lg:block lg:h-fit">
+          <FiltersPanel />
+        </aside>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between rounded bg-white px-4 py-3 shadow-sm">
+            <p className="text-sm text-slate-700">
+              {filteredProducts.length} products {searchTerm ? `for "${searchTerm}"` : "available"}
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {filteredProducts.map((product) => (
+              <article key={product.id} className="rounded bg-white p-3 shadow-sm transition hover:shadow-md">
+                <div className="mb-3">
+                  <ProductMediaCarousel media={product.media || []} productName={product.name} className="h-48" />
+                </div>
+
+                <Link href={`/products/${product.slug}`} className="line-clamp-1 text-base font-semibold hover:text-[#2874f0]">
+                  {product.name}
+                </Link>
+                <p className="mt-1 line-clamp-2 min-h-10 text-sm text-slate-600">{product.description || "No description"}</p>
+                <p className="mt-2 text-sm font-semibold text-slate-900">From Rs {Number(product.basePrice).toFixed(2)}</p>
+
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                  <button type="button" className="rounded border px-2 py-1" onClick={() => void toggleLike(product.id)}>
+                    {likedIds.includes(product.id) ? "Liked" : "Like"}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded bg-[#fb641b] px-2 py-1 font-semibold text-white"
+                    onClick={() => void addToCart(product.id)}
+                  >
+                    {cartIds.includes(product.id) ? "In Cart" : "Add"}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </div>
     </section>
   );
 }

@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
-import { setAuthSession } from "@/lib/auth";
+import { notifyAuthChange } from "@/lib/auth";
 import { AuthResponse } from "@/lib/types";
 
 export default function LoginPage() {
@@ -23,7 +23,7 @@ export default function LoginPage() {
         method: "POST",
         body: JSON.stringify({ email, password })
       });
-      setAuthSession(result.token, result.user);
+      notifyAuthChange();
       router.push(result.user.role === "ADMIN" ? "/admin" : "/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");

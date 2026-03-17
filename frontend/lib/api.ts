@@ -1,5 +1,3 @@
-import { getToken } from "./auth";
-
 function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, "");
 }
@@ -7,7 +5,6 @@ function normalizeBaseUrl(url: string): string {
 function resolveApiBaseUrl(): string {
   const envBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
 
-  // On server, keep existing behavior so SSR can use localhost by default.
   if (typeof window === "undefined") {
     return normalizeBaseUrl(envBaseUrl || "http://localhost:4000/api");
   }
@@ -35,13 +32,9 @@ export const API_BASE_URL = resolveApiBaseUrl();
 
 function buildHeaders(initHeaders?: HeadersInit, withJson = true): Headers {
   const headers = new Headers(initHeaders);
-  const token = getToken();
 
   if (withJson && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
-  }
-  if (token && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${token}`);
   }
 
   return headers;
@@ -51,7 +44,8 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: buildHeaders(init?.headers, true),
-    cache: "no-store"
+    cache: "no-store",
+    credentials: "include"
   });
 
   if (!response.ok) {
@@ -67,7 +61,8 @@ export async function apiUpload<T>(path: string, formData: FormData): Promise<T>
     method: "POST",
     body: formData,
     headers: buildHeaders(undefined, false),
-    cache: "no-store"
+    cache: "no-store",
+    credentials: "include"
   });
 
   if (!response.ok) {
@@ -81,7 +76,8 @@ export async function apiUpload<T>(path: string, formData: FormData): Promise<T>
 export async function apiDownload(path: string, fileName: string): Promise<void> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: buildHeaders(undefined, false),
-    cache: "no-store"
+    cache: "no-store",
+    credentials: "include"
   });
 
   if (!response.ok) {

@@ -13,7 +13,15 @@ declare global {
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : undefined;
+  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.split(" ")[1] : undefined;
+  const cookieHeader = req.headers.cookie || "";
+  const cookieToken = cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${env.COOKIE_NAME}=`))
+    ?.split("=")[1];
+
+  const token = cookieToken || bearerToken;
 
   if (!token) {
     return res.status(401).json({ message: "Unauthorized" });

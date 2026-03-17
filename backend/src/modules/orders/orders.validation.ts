@@ -12,5 +12,6 @@ export const createOrderSchema = z.object({
     )
     .min(1),
   notes: z.string().max(500).optional(),
-  city: z.string().min(2).optional()
+  city: z.string().min(2).optional(),
+  paymentMode: z.enum(["CASH", "CARD", "UPI"]).optional()
 });

@@ -4,22 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ApiUser } from "@/lib/types";
-import { getStoredUser } from "@/lib/auth";
+import { fetchProfile } from "@/lib/auth";
+import { fetchCart } from "@/lib/user-data";
 import { Route } from "next";
-
-const CART_KEY = "arul_cart_products";
-
-function readCartCount(): number {
-  if (typeof window === "undefined") return 0;
-  const raw = localStorage.getItem(CART_KEY);
-  if (!raw) return 0;
-  try {
-    const parsed = JSON.parse(raw) as string[];
-    return Array.isArray(parsed) ? parsed.length : 0;
-  } catch {
-    return 0;
-  }
-}
 
 export function MobileBottomNav() {
   const pathname = usePathname();
@@ -27,24 +14,35 @@ export function MobileBottomNav() {
   const [user, setUser] = useState<ApiUser | null>(null);
 
   useEffect(() => {
-    const sync = () => {
-      setCartCount(readCartCount());
-      setUser(getStoredUser<ApiUser>());
+    const sync = async () => {
+      try {
+        const profile = await fetchProfile();
+        setUser(profile);
+      } catch {
+        setUser(null);
+        setCartCount(0);
+        return;
+      }
+
+      try {
+        const items = await fetchCart();
+        setCartCount(items.reduce((sum, item) => sum + (item.quantity || 1), 0));
+      } catch {
+        setCartCount(0);
+      }
     };
 
-    sync();
-    window.addEventListener("storage", sync);
+    void sync();
     window.addEventListener("auth-changed", sync);
     window.addEventListener("focus", sync);
 
     return () => {
-      window.removeEventListener("storage", sync);
       window.removeEventListener("auth-changed", sync);
       window.removeEventListener("focus", sync);
     };
   }, []);
 
-  const items = [
+  const items: { label: string; href: Route | string; badge?: number }[] = [
     { label: "Home", href: "/" },
     { label: "Categories", href: "/products" },
     { label: "Cart", href: "/cart", badge: cartCount },
@@ -58,7 +56,7 @@ export function MobileBottomNav() {
           const active = pathname === item.href;
           return (
             <li key={item.href} className="relative">
-                <Link
+              <Link
                 href={item.href as Route}
                 className={`flex flex-col items-center justify-center py-2 text-[11px] font-semibold ${
                   active ? "text-[#2874f0]" : "text-slate-700"

@@ -36,8 +36,14 @@ export async function signup(req: Request, res: Response) {
     expiresIn: jwtExpiresIn
   });
 
+  res.cookie(env.COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: env.NODE_ENV === "production",
+    maxAge: 7 * 24 * 60 * 60 * 1000
+  });
+
   return res.status(201).json({
-    token,
     user: {
       id: user.id,
       name: user.name,
@@ -69,8 +75,14 @@ export async function login(req: Request, res: Response) {
     expiresIn: jwtExpiresIn
   });
 
+  res.cookie(env.COOKIE_NAME, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: env.NODE_ENV === "production",
+    maxAge: 7 * 24 * 60 * 60 * 1000
+  });
+
   return res.json({
-    token,
     user: {
       id: user.id,
       name: user.name,
@@ -78,4 +90,13 @@ export async function login(req: Request, res: Response) {
       role: user.role
     }
   });
+}
+
+export async function logout(req: Request, res: Response) {
+  res.clearCookie(env.COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: env.NODE_ENV === "production"
+  });
+  return res.json({ ok: true });
 }

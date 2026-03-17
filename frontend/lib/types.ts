@@ -6,7 +6,6 @@ export interface ApiUser {
 }
 
 export interface AuthResponse {
-  token: string;
   user: ApiUser;
 }
 
@@ -38,6 +37,13 @@ export interface Product {
   media?: ProductMedia[];
 }
 
+export interface CartItem {
+  id: string;
+  productId: string;
+  quantity: number;
+  product: Product;
+}
+
 export interface OrderItem {
   id: string;
   productId: string;
@@ -62,7 +68,7 @@ export interface Order {
     id: string;
     status: "PENDING" | "PAID" | "FAILED" | "REFUNDED";
     amount: string;
-    provider: string;
+    provider: "RAZORPAY" | "CASH" | "BANK_TRANSFER" | "CARD" | "UPI";
   } | null;
   invoice?: {
     id: string;
@@ -97,4 +103,17 @@ export interface AdminOffer {
     sortOrder: number;
     product: Product;
   }>;
+}
+
+export interface Address {
+  id: string;
+  userId: string;
+  label: string;
+  fullAddress: string;
+  city: string;
+  pincode?: string | null;
+  phone?: string | null;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
 }

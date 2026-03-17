@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Product } from "@/lib/types";
 import { ProductMediaCarousel } from "@/components/product-media-carousel";
+import { ProductDetailActions } from "@/components/product-detail-actions";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000/api";
 
@@ -143,12 +144,7 @@ export default async function ProductDetails({ params }: { params: Promise<{ slu
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Link href="/products" className="rounded bg-[#2874f0] px-4 py-2 text-sm font-semibold text-white">
-              Back to Products
-            </Link>
-            <Link href="/cart" className="rounded border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700">
-              Go to Cart
-            </Link>
+            <ProductDetailActions productId={product.id} />
           </div>
         </div>
       </div>
