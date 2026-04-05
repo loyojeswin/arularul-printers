@@ -6,7 +6,6 @@ import { CartItem } from "@/lib/types";
 import { fetchCart, removeCartItem, upsertCartItem } from "@/lib/user-data";
 import { fetchProfile } from "@/lib/auth";
 import { useRouter } from "next/navigation";
-import { Route } from "next";
 
 export default function CartPage() {
   const router = useRouter();
@@ -92,7 +91,7 @@ export default function CartPage() {
                 onChange={(event) => handleQuantity(item, Number(event.target.value || 1))}
               />
               <Link
-                href={"/get-quote" as Route}
+                href="/checkout"
                 className="rounded bg-[#fb641b] px-3 py-1 text-xs font-semibold text-white"
               >
                 Proceed

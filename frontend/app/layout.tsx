@@ -4,6 +4,7 @@ import { Footer } from "@/components/footer";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { Manrope } from "next/font/google";
 import { Suspense } from "react";
+import Script from "next/script";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -19,6 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className={manrope.variable}>
+        <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="afterInteractive" />
         <Suspense fallback={<div className="h-[92px] bg-[#2874f0]" />}>
           <Navbar />
         </Suspense>

@@ -14,6 +14,14 @@ interface CheckoutLineItem {
   finishType?: string;
 }
 
+interface RazorpayCreateOrderResponse {
+  orderId: string;
+  amount: number;
+  currency: string;
+  razorpayKeyId: string;
+  razorpayOrderId: string;
+}
+
 function optionsByType(pricingOptions: PricingOption[], optionType: string) {
   return pricingOptions.filter((option) => option.optionType === optionType);
 }
@@ -205,10 +213,61 @@ export default function CheckoutPage() {
       }
 
       const order = await apiUpload<Order>("/orders", formData);
-      await clearCart();
-      setCartItems([]);
-      setSuccess(`Order placed successfully: ${order.id}`);
-      setTimeout(() => router.push("/dashboard"), 900);
+
+      if (paymentMode === "CASH") {
+        await clearCart();
+        setCartItems([]);
+        setSuccess(`Order placed successfully: ${order.id}`);
+        setTimeout(() => router.push("/dashboard"), 900);
+        return;
+      }
+
+      setSuccess("Order created. Complete payment to confirm.");
+
+      const razorpayOrder = await apiFetch<RazorpayCreateOrderResponse>("/payments/razorpay/create-order", {
+        method: "POST",
+        body: JSON.stringify({ orderId: order.id })
+      });
+
+      if (!window.Razorpay) {
+        throw new Error("Payment gateway not loaded. Please refresh and try again.");
+      }
+
+      const instance = new window.Razorpay({
+        key: razorpayOrder.razorpayKeyId,
+        amount: Math.round(razorpayOrder.amount * 100),
+        currency: razorpayOrder.currency,
+        name: "arul printers",
+        description: `Order #${order.id.slice(-8)}`,
+        order_id: razorpayOrder.razorpayOrderId,
+        handler: async (response: any) => {
+          try {
+            await apiFetch("/payments/razorpay/verify", {
+              method: "POST",
+              body: JSON.stringify({
+                orderId: order.id,
+                razorpayOrderId: String(response?.razorpay_order_id || ""),
+                razorpayPaymentId: String(response?.razorpay_payment_id || ""),
+                razorpaySignature: String(response?.razorpay_signature || "")
+              })
+            });
+
+            await clearCart();
+            setCartItems([]);
+            setSuccess(`Payment successful. Order confirmed: ${order.id}`);
+            setTimeout(() => router.push("/dashboard"), 900);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Payment verification failed");
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setError("Payment cancelled. Your order is saved and still pending payment.");
+          }
+        }
+      });
+
+      instance.open();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Order placement failed");
     } finally {

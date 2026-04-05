@@ -5,6 +5,7 @@ import { HttpError } from "../../utils/http-error";
 import {
   createOfferSchema,
   createProductSchema,
+  updatePaymentSchema,
   updateOfferSchema,
   updateProductSchema
 } from "./admin.validation";
@@ -33,6 +34,36 @@ export async function updateOrderStatus(req: Request, res: Response) {
   });
 
   return res.json(order);
+}
+
+export async function updateCashPaymentStatus(req: Request, res: Response) {
+  const parsed = updatePaymentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new HttpError(400, parsed.error.errors[0]?.message || "Invalid payment payload");
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { id: req.params.orderId },
+    include: { payment: true }
+  });
+
+  if (!order || !order.payment) {
+    throw new HttpError(404, "Order/payment not found");
+  }
+
+  if (order.payment.provider !== "CASH") {
+    throw new HttpError(400, "Only CASH payments can be updated manually");
+  }
+
+  const payment = await prisma.payment.update({
+    where: { id: order.payment.id },
+    data: {
+      status: parsed.data.status,
+      ...(parsed.data.providerPaymentId ? { providerPaymentId: parsed.data.providerPaymentId } : {})
+    }
+  });
+
+  return res.json(payment);
 }
 
 export async function getRevenueAnalytics(_req: Request, res: Response) {

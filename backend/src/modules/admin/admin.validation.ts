@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+export const updatePaymentSchema = z.object({
+  status: z.enum(["PENDING", "PAID", "FAILED", "REFUNDED"]),
+  providerPaymentId: z.string().min(1).optional()
+});
+
 export const createProductSchema = z.object({
   name: z.string().min(2),
   slug: z

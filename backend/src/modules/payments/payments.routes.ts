@@ -1,15 +1,14 @@
 import { Router } from "express";
+import { asyncHandler } from "../../utils/async-handler";
+import { requireAuth } from "../../middleware/auth";
+import { razorpayCreateOrder, razorpayVerify, razorpayWebhook } from "./payments.controller";
 
 const router = Router();
 
-router.post("/razorpay/create-order", async (_req, res) => {
-  return res.json({
-    message: "Razorpay order creation scaffold ready. Integrate SDK here."
-  });
-});
+router.post("/razorpay/webhook", asyncHandler(razorpayWebhook));
 
-router.post("/razorpay/webhook", async (_req, res) => {
-  return res.status(200).json({ received: true });
-});
+router.use(requireAuth);
+router.post("/razorpay/create-order", asyncHandler(razorpayCreateOrder));
+router.post("/razorpay/verify", asyncHandler(razorpayVerify));
 
 export default router;

@@ -75,12 +75,7 @@ export async function createOrder(req: Request, res: Response) {
   const subtotal = itemRows.reduce((acc, row) => acc + toNumber(row.lineTotal), 0);
   const taxAmount = itemRows.reduce((acc, row) => acc + row.lineTax, 0);
   const totalAmount = subtotal + taxAmount;
-  const paymentProviderMap: Record<"CASH" | "CARD" | "UPI", PaymentProvider> = {
-    CASH: PaymentProvider.CASH,
-    CARD: PaymentProvider.CARD,
-    UPI: PaymentProvider.UPI
-  };
-  const provider = paymentProviderMap[parsed.data.paymentMode || "UPI"];
+  const provider = parsed.data.paymentMode === "CASH" ? PaymentProvider.CASH : PaymentProvider.RAZORPAY;
 
   const order = await prisma.order.create({
     data: {

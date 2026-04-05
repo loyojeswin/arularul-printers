@@ -5,15 +5,12 @@ import { FormEvent, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ApiUser } from "@/lib/types";
 import { fetchProfile, logout } from "@/lib/auth";
-import { Route } from "next";
 import { SidebarDrawer } from "@/components/sidebar-drawer";
 
 const quickLinks = [
-  ["Home", "/"],
-  ["Products", "/products"],
-  ["Get Quote", "/get-quote"],
-  ["Services", "/services"],
-  ["Contact", "/contact"]
+  { label: "Home", href: "/" },
+  { label: "Products", href: "/products" },
+  { label: "About", href: "/about" }
 ] as const;
 
 export function Navbar() {
@@ -112,19 +109,15 @@ export function Navbar() {
         </div>
 
         <div className="flex items-center gap-4 overflow-x-auto whitespace-nowrap text-xs font-medium text-white/95 md:text-sm">
-          {quickLinks.map(([label, href]) => (
+          {quickLinks.map(({ label, href }) => (
             <Link
               key={href}
-              href={href as Route}
+              href={href}
               className={`rounded px-2 py-1 ${pathname === href ? "bg-white text-[#2874f0]" : "hover:bg-white/15"}`}
             >
               {label}
             </Link>
           ))}
-
-          <Link href="/about" className="rounded px-2 py-1 hover:bg-white/15">
-            About
-          </Link>
 
           {!user ? (
             <div className="ml-auto flex items-center gap-2 md:hidden">

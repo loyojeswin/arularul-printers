@@ -10,6 +10,7 @@ import {
   getAllOffers,
   getAllProducts,
   getRevenueAnalytics,
+  updateCashPaymentStatus,
   uploadProductMedia,
   updateOffer,
   updateOrderStatus,
@@ -23,6 +24,7 @@ const router = Router();
 router.use(requireAuth, requireAdmin);
 router.get("/orders", asyncHandler(getAllOrders));
 router.patch("/orders/:orderId/status", asyncHandler(updateOrderStatus));
+router.patch("/orders/:orderId/payment", asyncHandler(updateCashPaymentStatus));
 router.get("/analytics/revenue", asyncHandler(getRevenueAnalytics));
 router.get("/products", asyncHandler(getAllProducts));
 router.get("/offers", asyncHandler(getAllOffers));

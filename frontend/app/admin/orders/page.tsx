@@ -53,6 +53,18 @@ export default function AdminOrdersPage() {
     }
   }
 
+  async function markCashPaid(orderId: string) {
+    try {
+      await apiFetch(`/admin/orders/${orderId}/payment`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "PAID" })
+      });
+      await loadOrders();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Payment update failed");
+    }
+  }
+
   const filteredOrders = useMemo(() => {
     const query = search.trim().toLowerCase();
 
@@ -174,7 +186,20 @@ export default function AdminOrdersPage() {
                     })}
                   </td>
                   <td className="px-4 py-3 text-slate-700">{order.user?.name || "-"}</td>
-                  <td className="px-4 py-3 text-slate-700">{order.payment?.status || "N/A"}</td>
+                  <td className="px-4 py-3 text-slate-700">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>{order.payment?.status || "N/A"}</span>
+                      {order.payment?.provider === "CASH" && order.payment.status === "PENDING" ? (
+                        <button
+                          type="button"
+                          className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700"
+                          onClick={() => void markCashPaid(order.id)}
+                        >
+                          Mark Paid
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
                   <td className="px-4 py-3 font-medium text-slate-900">Rs {Number(order.totalAmount).toFixed(2)}</td>
                   <td className="px-4 py-3">
                     <span className={`rounded-full px-2 py-1 text-xs font-semibold ${orderStatusClasses[order.status]}`}>

@@ -13,6 +13,7 @@ const envSchema = z.object({
   UPLOAD_DIR: z.string().default("uploads"),
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
   DEFAULT_CITY: z.string().default("Thoothukudi")
 });
 

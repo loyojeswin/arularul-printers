@@ -34,12 +34,9 @@ export function SidebarDrawer({
   const mainLinks: Array<{ label: string; href: string }> = [
     { label: "Home", href: "/" },
     { label: "Products", href: "/products" },
-    { label: "Get Quote", href: "/get-quote" },
     { label: "Cart", href: "/cart" },
     { label: "Checkout", href: "/checkout" },
-    { label: "Services", href: "/services" },
-    { label: "About", href: "/about" },
-    { label: "Contact", href: "/contact" }
+    { label: "About", href: "/about" }
   ];
 
   const adminLinks: Array<{ label: string; href: string }> = [
