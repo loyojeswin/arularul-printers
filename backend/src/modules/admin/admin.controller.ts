@@ -15,7 +15,17 @@ import { env } from "../../config/env";
 
 export async function getAllOrders(_req: Request, res: Response) {
   const orders = await prisma.order.findMany({
-    include: { user: true, items: { include: { product: true } }, payment: true },
+    include: {
+      user: true,
+      items: {
+        include: {
+          product: { include: { media: { orderBy: { sortOrder: "asc" } } } },
+          designFiles: { orderBy: { sortOrder: "asc" } }
+        }
+      },
+      payment: true,
+      invoice: true
+    },
     orderBy: { createdAt: "desc" }
   });
 
@@ -305,6 +315,34 @@ export async function updateOffer(req: Request, res: Response) {
   });
 
   return res.json(offer);
+}
+
+export async function uploadOfferImage(req: Request, res: Response) {
+  const file = req.file as Express.Multer.File | undefined;
+  if (!file) {
+    throw new HttpError(400, "No file uploaded");
+  }
+
+  const offer = await prisma.offer.findUnique({ where: { id: req.params.offerId } });
+  if (!offer) {
+    throw new HttpError(404, "Offer not found");
+  }
+
+  if (offer.imagePath) {
+    const oldAbsolutePath = path.resolve(process.cwd(), env.UPLOAD_DIR, offer.imagePath);
+    if (fs.existsSync(oldAbsolutePath)) {
+      fs.unlinkSync(oldAbsolutePath);
+    }
+  }
+
+  const relativePath = path.join("offers", path.basename(file.path));
+
+  const updated = await prisma.offer.update({
+    where: { id: req.params.offerId },
+    data: { imagePath: relativePath }
+  });
+
+  return res.status(201).json(updated);
 }
 
 export async function deleteOffer(req: Request, res: Response) {

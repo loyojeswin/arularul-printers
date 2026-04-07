@@ -11,13 +11,14 @@ import {
   getAllProducts,
   getRevenueAnalytics,
   updateCashPaymentStatus,
+  uploadOfferImage,
   uploadProductMedia,
   updateOffer,
   updateOrderStatus,
   updateProduct
 } from "./admin.controller";
 import { asyncHandler } from "../../utils/async-handler";
-import { productMediaUpload } from "../../middleware/upload";
+import { offerImageUpload, productMediaUpload } from "../../middleware/upload";
 
 const router = Router();
 
@@ -34,6 +35,7 @@ router.patch("/products/:productId", asyncHandler(updateProduct));
 router.patch("/offers/:offerId", asyncHandler(updateOffer));
 router.delete("/products/:productId", asyncHandler(deleteProduct));
 router.delete("/offers/:offerId", asyncHandler(deleteOffer));
+router.post("/offers/:offerId/image", offerImageUpload.single("file"), asyncHandler(uploadOfferImage));
 router.post(
   "/products/:productId/media",
   productMediaUpload.array("files", 10),

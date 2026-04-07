@@ -26,6 +26,7 @@ export async function listOffers(_req: Request, res: Response) {
       title: offer.title,
       slug: offer.slug,
       description: offer.description,
+      imagePath: offer.imagePath,
       isActive: offer.isActive,
       productCount: offer.products.length
     }))
@@ -59,7 +60,8 @@ export async function getOfferProducts(req: Request, res: Response) {
       id: offer.id,
       title: offer.title,
       slug: offer.slug,
-      description: offer.description
+      description: offer.description,
+      imagePath: offer.imagePath
     },
     products: offer.products.map((row) => row.product).filter((product) => product.isActive)
   });

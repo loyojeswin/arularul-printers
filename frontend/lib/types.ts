@@ -50,11 +50,37 @@ export interface OrderItem {
   quantity: number;
   paperType: string;
   finishType: string;
+  notes?: string | null;
+  designFilePath?: string | null;
   lineTotal: string;
-  product?: {
-    name: string;
-    slug: string;
-  };
+  designFiles?: Array<{
+    id: string;
+    filePath: string;
+    mimeType: string;
+    fileSize: number;
+    sortOrder: number;
+  }>;
+  product?: Product;
+}
+
+export interface ProductReview {
+  id: string;
+  rating: number;
+  title?: string | null;
+  comment?: string | null;
+  createdAt: string;
+  user: { id: string; name: string };
+}
+
+export interface ProductReviewSummary {
+  averageRating: number;
+  totalReviews: number;
+  countByRating: Record<1 | 2 | 3 | 4 | 5, number>;
+}
+
+export interface ProductReviewsResponse {
+  summary: ProductReviewSummary;
+  reviews: ProductReview[];
 }
 
 export interface Order {
@@ -63,6 +89,7 @@ export interface Order {
   subtotal: string;
   taxAmount: string;
   totalAmount: string;
+  notes?: string | null;
   createdAt: string;
   payment?: {
     id: string;
@@ -89,6 +116,7 @@ export interface Offer {
   slug: string;
   description?: string | null;
   isActive: boolean;
+  imagePath?: string | null;
   productCount?: number;
 }
 
@@ -98,6 +126,7 @@ export interface AdminOffer {
   slug: string;
   description?: string | null;
   isActive: boolean;
+  imagePath?: string | null;
   products: Array<{
     productId: string;
     sortOrder: number;

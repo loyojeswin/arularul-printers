@@ -55,6 +55,7 @@ model User {
   addresses     Address[]
   likes         UserProductLike[]
   cartItems     CartItem[]
+  reviews       ProductReview[]
 }
 
 model Address {
@@ -91,6 +92,7 @@ model Product {
   offers        OfferProduct[]
   likes         UserProductLike[]
   cartItems     CartItem[]
+  reviews       ProductReview[]
 }
 
 model Offer {
@@ -98,6 +100,7 @@ model Offer {
   title         String
   slug          String         @unique
   description   String?
+  imagePath     String?
   isActive      Boolean        @default(true)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
@@ -205,11 +208,13 @@ model OrderItem {
   paperType      String
   finishType     String
   designFilePath String?
+  notes          String?
   unitPrice      Decimal   @db.Decimal(10, 2)
   lineTotal      Decimal   @db.Decimal(12, 2)
 
   order          Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product        Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  designFiles    OrderItemDesignFile[]
 
   @@index([orderId])
   @@index([productId])
@@ -237,4 +242,36 @@ model Invoice {
   issuedAt      DateTime  @default(now())
 
   order         Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model ProductReview {
+  id        String   @id @default(cuid())
+  productId String
+  userId    String
+  rating    Int
+  title     String?
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, userId])
+  @@index([productId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model OrderItemDesignFile {
+  id         String   @id @default(cuid())
+  orderItemId String
+  filePath   String
+  mimeType   String
+  fileSize   Int
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  orderItem  OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  @@index([orderItemId, sortOrder])
 }

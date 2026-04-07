@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { Offer } from "@/lib/types";
 
 export default function HomePage() {
@@ -56,6 +56,15 @@ export default function HomePage() {
               href={`/products?offer=${offer.slug}`}
               className="rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:border-[#2874f0] hover:shadow-sm"
             >
+              {offer.imagePath ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={`${API_BASE_URL.replace(/\/api$/, "")}/uploads/${offer.imagePath}`}
+                  alt={offer.title}
+                  className="mb-3 h-28 w-full rounded object-cover"
+                  loading="lazy"
+                />
+              ) : null}
               <p className="text-base font-semibold text-slate-900">{offer.title}</p>
               <p className="mt-1 text-sm text-slate-600">{offer.description || "Special offer available"}</p>
               <p className="mt-2 text-xs font-semibold text-[#2874f0]">{offer.productCount || 0} product(s) in this offer</p>

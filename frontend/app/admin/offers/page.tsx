@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { API_BASE_URL, apiFetch, apiUpload } from "@/lib/api";
 import { AdminOffer, Product } from "@/lib/types";
 
 interface OfferForm {
@@ -39,6 +39,8 @@ export default function AdminOffersPage() {
   const [editingOfferId, setEditingOfferId] = useState<string | null>(null);
   const [savingOffer, setSavingOffer] = useState(false);
   const [offerForm, setOfferForm] = useState<OfferForm>(initialOfferForm);
+  const [offerImage, setOfferImage] = useState<File | null>(null);
+  const [existingImagePath, setExistingImagePath] = useState<string | null>(null);
 
   const submitText = useMemo(() => (editingOfferId ? "Update Offer" : "Create Offer"), [editingOfferId]);
 
@@ -66,6 +68,8 @@ export default function AdminOffersPage() {
   function resetForm() {
     setEditingOfferId(null);
     setOfferForm(initialOfferForm);
+    setOfferImage(null);
+    setExistingImagePath(null);
   }
 
   function openCreateModal() {
@@ -87,6 +91,8 @@ export default function AdminOffersPage() {
       isActive: offer.isActive,
       productIds: offer.products.map((row) => row.productId)
     });
+    setOfferImage(null);
+    setExistingImagePath(offer.imagePath || null);
     setIsModalOpen(true);
   }
 
@@ -114,15 +120,25 @@ export default function AdminOffersPage() {
       };
 
       if (editingOfferId) {
-        await apiFetch(`/admin/offers/${editingOfferId}`, {
+        await apiFetch<AdminOffer>(`/admin/offers/${editingOfferId}`, {
           method: "PATCH",
           body: JSON.stringify(payload)
         });
+        if (offerImage) {
+          const formData = new FormData();
+          formData.append("file", offerImage, offerImage.name);
+          await apiUpload(`/admin/offers/${editingOfferId}/image`, formData);
+        }
       } else {
-        await apiFetch("/admin/offers", {
+        const created = await apiFetch<AdminOffer>("/admin/offers", {
           method: "POST",
           body: JSON.stringify(payload)
         });
+        if (offerImage) {
+          const formData = new FormData();
+          formData.append("file", offerImage, offerImage.name);
+          await apiUpload(`/admin/offers/${created.id}/image`, formData);
+        }
       }
 
       closeModal();
@@ -177,6 +193,15 @@ export default function AdminOffersPage() {
             <article key={offer.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
+                  {offer.imagePath ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={`${API_BASE_URL.replace(/\/api$/, "")}/uploads/${offer.imagePath}`}
+                      alt={offer.title}
+                      className="mb-2 h-20 w-32 rounded object-cover"
+                      loading="lazy"
+                    />
+                  ) : null}
                   <p className="font-semibold text-slate-900">{offer.title}</p>
                   <p className="text-xs text-slate-500">Slug: {offer.slug}</p>
                   <p className="mt-1 text-sm text-slate-600">{offer.description || "No description"}</p>
@@ -231,6 +256,24 @@ export default function AdminOffersPage() {
             </div>
 
             <form onSubmit={saveOffer} className="grid gap-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Offer image</p>
+                {existingImagePath ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={`${API_BASE_URL.replace(/\/api$/, "")}/uploads/${existingImagePath}`}
+                    alt="Offer image"
+                    className="mt-2 h-28 w-full rounded object-cover"
+                  />
+                ) : null}
+                <input
+                  className="mt-2 w-full rounded border border-slate-300 bg-white p-2 text-sm"
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => setOfferImage(event.target.files?.[0] ?? null)}
+                />
+                {offerImage ? <p className="mt-1 text-xs text-slate-600">Selected: {offerImage.name}</p> : null}
+              </div>
               <input
                 className="rounded-lg border border-slate-300 p-2.5 text-sm"
                 placeholder="Offer title"

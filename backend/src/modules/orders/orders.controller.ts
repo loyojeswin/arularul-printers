@@ -42,7 +42,7 @@ export async function createOrder(req: Request, res: Response) {
     throw new HttpError(400, "One or more products are invalid/inactive");
   }
 
-  const filePath = req.file?.path;
+  const files = (req.files as Express.Multer.File[]) || [];
 
   const itemRows = parsed.data.items.map((item) => {
     const product = products.find((p) => p.id === item.productId)!;
@@ -52,6 +52,27 @@ export async function createOrder(req: Request, res: Response) {
     const finish = product.pricingOptions.find(
       (po) => po.optionType === "FINISH" && po.optionValue === item.finishType
     );
+
+    const normalizedIndices =
+      item.designFileIndices && item.designFileIndices.length > 0
+        ? item.designFileIndices
+        : item.designFileIndex !== undefined
+          ? [item.designFileIndex]
+          : [];
+
+    const designFiles = normalizedIndices.map((index) => {
+      const file = files[index];
+      if (!file) {
+        throw new HttpError(400, "Invalid design file mapping");
+      }
+      return file;
+    });
+
+    const relativeDesignFiles = designFiles.map((file) => ({
+      filePath: path.join("orders", path.basename(file.path)),
+      mimeType: file.mimetype,
+      fileSize: file.size
+    }));
 
     const breakdown = calculatePrice({
       basePrice: toNumber(product.basePrice),
@@ -65,7 +86,9 @@ export async function createOrder(req: Request, res: Response) {
       quantity: item.quantity,
       paperType: item.paperType,
       finishType: item.finishType,
-      designFilePath: filePath,
+      designFilePath: relativeDesignFiles[0]?.filePath,
+      notes: item.notes,
+      designFiles: relativeDesignFiles,
       unitPrice: new Prisma.Decimal(toNumber(product.basePrice)),
       lineTotal: new Prisma.Decimal(breakdown.subtotal),
       lineTax: breakdown.taxAmount
@@ -86,7 +109,21 @@ export async function createOrder(req: Request, res: Response) {
       taxAmount: new Prisma.Decimal(taxAmount),
       totalAmount: new Prisma.Decimal(totalAmount),
       items: {
-        create: itemRows.map(({ lineTax, ...item }) => item)
+        create: itemRows.map(({ lineTax, designFiles, ...item }) => ({
+          ...item,
+          ...(designFiles.length
+            ? {
+                designFiles: {
+                  create: designFiles.map((file, index) => ({
+                    filePath: file.filePath,
+                    mimeType: file.mimeType,
+                    fileSize: file.fileSize,
+                    sortOrder: index
+                  }))
+                }
+              }
+            : {})
+        }))
       },
       payment: {
         create: {
@@ -112,7 +149,18 @@ export async function getMyOrders(req: Request, res: Response) {
 
   const orders = await prisma.order.findMany({
     where: { userId: req.authUser.userId },
-    include: { items: { include: { product: true } }, payment: true, invoice: true },
+    include: {
+      items: {
+        include: {
+          product: {
+            include: { media: { orderBy: { sortOrder: "asc" } } }
+          },
+          designFiles: { orderBy: { sortOrder: "asc" } }
+        }
+      },
+      payment: true,
+      invoice: true
+    },
     orderBy: { createdAt: "desc" }
   });
 
@@ -126,7 +174,7 @@ export async function reorder(req: Request, res: Response) {
 
   const oldOrder = await prisma.order.findFirst({
     where: { id: req.params.orderId, userId: req.authUser.userId },
-    include: { items: true }
+    include: { items: { include: { designFiles: { orderBy: { sortOrder: "asc" } } } } }
   });
 
   if (!oldOrder) {
@@ -147,8 +195,19 @@ export async function reorder(req: Request, res: Response) {
           paperType: item.paperType,
           finishType: item.finishType,
           designFilePath: item.designFilePath,
+          notes: item.notes,
           unitPrice: item.unitPrice,
-          lineTotal: item.lineTotal
+          lineTotal: item.lineTotal,
+          designFiles: item.designFiles.length
+            ? {
+                create: item.designFiles.map((file) => ({
+                  filePath: file.filePath,
+                  mimeType: file.mimeType,
+                  fileSize: file.fileSize,
+                  sortOrder: file.sortOrder
+                }))
+              }
+            : undefined
         }))
       },
       payment: {

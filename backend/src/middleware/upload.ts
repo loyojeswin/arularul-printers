@@ -37,6 +37,7 @@ function createStorage(relativePath = "") {
 
 const allowedMime = new Set(["application/pdf", "image/jpeg", "image/png"]);
 const mediaMimePrefix = ["image/", "video/"];
+const imageMimePrefix = ["image/"];
 
 export const upload = multer({
   storage: createStorage(),
@@ -49,6 +50,17 @@ export const upload = multer({
   limits: { fileSize: 15 * 1024 * 1024 }
 });
 
+export const orderDesignUpload = multer({
+  storage: createStorage("orders"),
+  fileFilter: (_req, file, cb) => {
+    if (!allowedMime.has(file.mimetype)) {
+      return cb(new Error("Only PDF, JPG, PNG files are allowed"));
+    }
+    return cb(null, true);
+  },
+  limits: { fileSize: 15 * 1024 * 1024, files: 30 }
+});
+
 export const productMediaUpload = multer({
   storage: createStorage("products"),
   fileFilter: (_req, file, cb) => {
@@ -58,4 +70,15 @@ export const productMediaUpload = multer({
     return cb(null, true);
   },
   limits: { fileSize: 100 * 1024 * 1024, files: 10 }
+});
+
+export const offerImageUpload = multer({
+  storage: createStorage("offers"),
+  fileFilter: (_req, file, cb) => {
+    if (!imageMimePrefix.some((prefix) => file.mimetype.startsWith(prefix))) {
+      return cb(new Error("Only image files are allowed"));
+    }
+    return cb(null, true);
+  },
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 }
 });

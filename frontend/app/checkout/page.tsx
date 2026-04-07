@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiUpload, apiFetch } from "@/lib/api";
+import { API_BASE_URL, apiUpload, apiFetch } from "@/lib/api";
 import { fetchProfile } from "@/lib/auth";
 import { clearCart, fetchCart, removeCartItem, upsertCartItem } from "@/lib/user-data";
 import { Address, Order, Product, PricingOption } from "@/lib/types";
@@ -12,6 +12,8 @@ interface CheckoutLineItem {
   quantity: number;
   paperType?: string;
   finishType?: string;
+  notes?: string;
+  designFiles?: File[];
 }
 
 interface RazorpayCreateOrderResponse {
@@ -33,12 +35,11 @@ export default function CheckoutPage() {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState("");
   const [paymentMode, setPaymentMode] = useState<"CASH" | "CARD" | "UPI">("UPI");
-  const [designFile, setDesignFile] = useState<File | null>(null);
-  const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(true);
   const [placingOrder, setPlacingOrder] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [designPreviewUrls, setDesignPreviewUrls] = useState<Record<string, string[]>>({});
 
   const [newAddress, setNewAddress] = useState({
     label: "Home",
@@ -74,7 +75,9 @@ export default function CheckoutPage() {
             productId: item.productId,
             quantity: Math.max(1, item.quantity || 1),
             paperType: paper || "Standard",
-            finishType: finish || "None"
+            finishType: finish || "None",
+            notes: "",
+            designFiles: []
           };
         });
 
@@ -111,29 +114,27 @@ export default function CheckoutPage() {
 
   const selectedAddress = addresses.find((address) => address.id === selectedAddressId) || null;
 
-  function updateDesignFile(file: File | null) {
-    if (!file) {
-      setDesignFile(null);
-      return;
-    }
-
+  function validateDesignFile(file: File | null): string | null {
+    if (!file) return null;
     const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png"]);
     if (!allowedTypes.has(file.type)) {
-      setError("Only PDF, JPG, PNG files are allowed");
-      setDesignFile(null);
-      return;
+      return "Only PDF, JPG, PNG files are allowed";
     }
 
     const maxBytes = 15 * 1024 * 1024;
     if (file.size > maxBytes) {
-      setError("Design file must be 15MB or less");
-      setDesignFile(null);
-      return;
+      return "Design file must be 15MB or less";
     }
-
-    setError(null);
-    setDesignFile(file);
+    return null;
   }
+
+  useEffect(() => {
+    return () => {
+      Object.values(designPreviewUrls).flat().forEach((url) => {
+        URL.revokeObjectURL(url);
+      });
+    };
+  }, [designPreviewUrls]);
 
   async function updateCartItem(productId: string, patch: Partial<CheckoutLineItem>) {
     const next = cartItems.map((item) => (item.productId === productId ? { ...item, ...patch } : item));
@@ -146,8 +147,71 @@ export default function CheckoutPage() {
 
   async function handleRemove(productId: string) {
     await removeCartItem(productId);
+    setDesignPreviewUrls((prev) => {
+      (prev[productId] || []).forEach((url) => URL.revokeObjectURL(url));
+      const { [productId]: _removed, ...rest } = prev;
+      return rest;
+    });
     const next = cartItems.filter((item) => item.productId !== productId);
     setCartItems(next);
+  }
+
+  async function setItemDesignFiles(productId: string, files: File[]) {
+    for (const file of files) {
+      const message = validateDesignFile(file);
+      if (message) {
+        setError(message);
+        return;
+      }
+    }
+
+    setError(null);
+    await updateCartItem(productId, { designFiles: files });
+
+    setDesignPreviewUrls((prev) => {
+      (prev[productId] || []).forEach((url) => URL.revokeObjectURL(url));
+      const nextUrls = files.map((file) => URL.createObjectURL(file));
+      return { ...prev, [productId]: nextUrls };
+    });
+  }
+
+  async function appendItemDesignFiles(productId: string, files: File[]) {
+    if (files.length === 0) return;
+
+    for (const file of files) {
+      const message = validateDesignFile(file);
+      if (message) {
+        setError(message);
+        return;
+      }
+    }
+
+    setError(null);
+
+    const existing = cartItems.find((item) => item.productId === productId)?.designFiles || [];
+    const nextFiles = [...existing, ...files];
+    await updateCartItem(productId, { designFiles: nextFiles });
+
+    setDesignPreviewUrls((prev) => {
+      const existingUrls = prev[productId] || [];
+      const nextUrls = [...existingUrls, ...files.map((file) => URL.createObjectURL(file))];
+      return { ...prev, [productId]: nextUrls };
+    });
+  }
+
+  async function removeItemDesignFile(productId: string, index: number) {
+    const existing = cartItems.find((item) => item.productId === productId)?.designFiles || [];
+    if (!existing[index]) return;
+
+    const nextFiles = existing.filter((_, idx) => idx !== index);
+    await updateCartItem(productId, { designFiles: nextFiles });
+
+    setDesignPreviewUrls((prev) => {
+      const urls = prev[productId] || [];
+      const urlToRemove = urls[index];
+      if (urlToRemove) URL.revokeObjectURL(urlToRemove);
+      return { ...prev, [productId]: urls.filter((_, idx) => idx !== index) };
+    });
   }
 
   async function saveAddress() {
@@ -194,11 +258,16 @@ export default function CheckoutPage() {
 
     setPlacingOrder(true);
     try {
+      const files: File[] = [];
       const items = checkoutRows.map((row) => ({
         productId: (row.product as Product).id,
         quantity: Math.max(1, row.item.quantity || 1),
         paperType: row.item.paperType || "Standard",
-        finishType: row.item.finishType || "None"
+        finishType: row.item.finishType || "None",
+        notes: row.item.notes?.trim() || undefined,
+        designFileIndices: (row.item.designFiles || []).length
+          ? row.item.designFiles?.map((file) => files.push(file) - 1)
+          : undefined
       }));
 
       const deliveryNote = `Delivery Address (${selectedAddress.label}): ${selectedAddress.fullAddress}, ${selectedAddress.city} - ${selectedAddress.pincode}. Phone: ${selectedAddress.phone}`;
@@ -206,11 +275,9 @@ export default function CheckoutPage() {
       const formData = new FormData();
       formData.append("items", JSON.stringify(items));
       formData.append("city", selectedAddress.city);
-      formData.append("notes", [deliveryNote, notes].filter(Boolean).join("\n"));
+      formData.append("notes", deliveryNote);
       formData.append("paymentMode", paymentMode);
-      if (designFile) {
-        formData.append("designFile", designFile, designFile.name);
-      }
+      files.forEach((file) => formData.append("designFiles", file, file.name));
 
       const order = await apiUpload<Order>("/orders", formData);
 
@@ -283,7 +350,7 @@ export default function CheckoutPage() {
       {error ? <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p> : null}
       {success ? <p className="rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</p> : null}
 
-      <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+      <div className="grid gap-4">
         <form className="space-y-4" onSubmit={placeOrder}>
           <div className="rounded bg-white p-4 shadow-sm">
             <h2 className="text-lg font-semibold">Delivery Address</h2>
@@ -328,47 +395,141 @@ export default function CheckoutPage() {
             <div className="mt-3 space-y-3">
               {checkoutRows.map((row) => {
                 const product = row.product as Product;
-                const paperOptions = optionsByType(product.pricingOptions, "PAPER");
-                const finishOptions = optionsByType(product.pricingOptions, "FINISH");
+                const firstImage =
+                  (product.media || []).find((media) => media.fileType === "IMAGE") ||
+                  (product.media || [])[0] ||
+                  null;
+                const unitPrice = Number(product.basePrice);
+                const quantity = Math.max(1, row.item.quantity || 1);
+                const lineTotal = unitPrice * quantity;
+                const designPreviews = designPreviewUrls[product.id] || [];
 
                 return (
-                  <article key={product.id} className="rounded border p-3">
-                    <p className="font-semibold">{product.name}</p>
-                    <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                      <input
-                        className="rounded border p-2 text-sm"
-                        type="number"
-                        min={1}
-                        value={Math.max(1, row.item.quantity || 1)}
-                        onChange={(event) => updateCartItem(product.id, { quantity: Number(event.target.value || 1) })}
-                      />
+                  <article key={product.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+                      <div className="flex gap-3">
+                        <div className="h-24 w-28 overflow-hidden rounded-lg bg-slate-100">
+                          {firstImage ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={`${API_BASE_URL.replace(/\/api$/, "")}/uploads/${firstImage.filePath}`}
+                              alt={product.name}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                            />
+                          ) : null}
+                        </div>
 
-                      <select
-                        className="rounded border p-2 text-sm"
-                        value={row.item.paperType || paperOptions[0]?.optionValue || "Standard"}
-                        onChange={(event) => updateCartItem(product.id, { paperType: event.target.value })}
-                      >
-                        {(paperOptions.length ? paperOptions : [{ id: "default-paper", optionValue: "Standard", optionType: "PAPER", multiplier: "1", fixedAmount: "0" }]).map((option) => (
-                          <option key={option.id} value={option.optionValue}>
-                            Paper: {option.optionValue}
-                          </option>
-                        ))}
-                      </select>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-slate-900 sm:text-base">{product.name}</p>
+                          {product.description ? (
+                            <p className="mt-1 line-clamp-2 text-xs text-slate-600">{product.description}</p>
+                          ) : null}
+                          <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2">
+                            <div className="flex items-center justify-between text-xs text-slate-600">
+                              <span>Unit</span>
+                              <span>Rs {Number.isFinite(unitPrice) ? unitPrice.toFixed(2) : "0.00"}</span>
+                            </div>
+                            <div className="mt-1 flex items-center justify-between gap-2 text-xs text-slate-600">
+                              <span>Qty</span>
+                              <input
+                                className="w-24 rounded border border-slate-300 bg-white p-1 text-right text-sm text-slate-900"
+                                type="number"
+                                min={1}
+                                value={quantity}
+                                onChange={(event) =>
+                                  updateCartItem(product.id, { quantity: Number(event.target.value || 1) })
+                                }
+                              />
+                            </div>
+                            <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2 text-sm font-bold text-slate-900">
+                              <span>Total</span>
+                              <span>Rs {Number.isFinite(lineTotal) ? lineTotal.toFixed(2) : "0.00"}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
 
-                      <select
-                        className="rounded border p-2 text-sm"
-                        value={row.item.finishType || finishOptions[0]?.optionValue || "None"}
-                        onChange={(event) => updateCartItem(product.id, { finishType: event.target.value })}
-                      >
-                        {(finishOptions.length ? finishOptions : [{ id: "default-finish", optionValue: "None", optionType: "FINISH", multiplier: "1", fixedAmount: "0" }]).map((option) => (
-                          <option key={option.id} value={option.optionValue}>
-                            Finish: {option.optionValue}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-xs font-semibold text-slate-700">Design files (optional)</p>
+                          <input
+                            className="mt-1 w-full rounded border p-2 text-sm"
+                            type="file"
+                            accept="application/pdf,image/jpeg,image/png"
+                            multiple
+                            onChange={(event) => {
+                              void appendItemDesignFiles(product.id, Array.from(event.target.files || []));
+                              event.currentTarget.value = "";
+                            }}
+                          />
+                          {(row.item.designFiles || []).length ? (
+                            <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+                              <div className="grid grid-cols-3 gap-2">
+                                {designPreviews.map((url, index) => {
+                                  const file = (row.item.designFiles || [])[index];
+                                  if (!file) return null;
+                                  return file.type.startsWith("image/") ? (
+                                    <div key={url} className="relative">
+                                      <button
+                                        type="button"
+                                        aria-label="Remove design file"
+                                        className="absolute right-1 top-1 rounded-full bg-black/70 px-2 py-1 text-[10px] font-bold text-white"
+                                        onClick={() => void removeItemDesignFile(product.id, index)}
+                                      >
+                                        X
+                                      </button>
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={url}
+                                        alt="Design preview"
+                                        className="h-20 w-full rounded object-cover"
+                                        loading="lazy"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div key={url} className="relative">
+                                      <button
+                                        type="button"
+                                        aria-label="Remove design file"
+                                        className="absolute right-1 top-1 rounded-full bg-black/70 px-2 py-1 text-[10px] font-bold text-white"
+                                        onClick={() => void removeItemDesignFile(product.id, index)}
+                                      >
+                                        X
+                                      </button>
+                                      <a
+                                        className="flex h-20 items-center justify-center rounded border border-slate-200 bg-white text-[11px] font-semibold text-[#2874f0]"
+                                        href={url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                      >
+                                        View PDF
+                                      </a>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <p className="mt-2 text-xs text-slate-600">
+                                Selected: {(row.item.designFiles || []).map((f) => f.name).join(", ")}
+                              </p>
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div>
+                          <p className="text-xs font-semibold text-slate-700">Notes (optional)</p>
+                          <textarea
+                            className="mt-1 w-full rounded border p-2 text-sm"
+                            rows={3}
+                            value={row.item.notes || ""}
+                            placeholder="Notes for this item"
+                            onChange={(event) => void updateCartItem(product.id, { notes: event.target.value })}
+                          />
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="mt-2 flex gap-2">
+                    <div className="mt-3 flex justify-end gap-2">
                       <button type="button" className="rounded border px-3 py-1 text-xs" onClick={() => void handleRemove(product.id)}>
                         Remove
                       </button>
@@ -377,31 +538,30 @@ export default function CheckoutPage() {
                 );
               })}
             </div>
-          </div>
 
-          <div className="rounded bg-white p-4 shadow-sm">
-            <h2 className="text-lg font-semibold">Design File (Optional)</h2>
-            <p className="mt-1 text-xs text-slate-500">Upload PDF/JPG/PNG (max 15MB).</p>
-
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-              <input
-                className="w-full rounded border p-2 text-sm"
-                type="file"
-                accept="application/pdf,image/jpeg,image/png"
-                onChange={(event) => updateDesignFile(event.target.files?.[0] ?? null)}
-              />
-              {designFile ? (
-                <button
-                  type="button"
-                  className="rounded border px-3 py-2 text-xs"
-                  onClick={() => updateDesignFile(null)}
-                >
-                  Clear
-                </button>
-              ) : null}
+            <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-3 text-sm">
+              {(() => {
+                const deliveryCharge = 0;
+                const total = subtotal + deliveryCharge;
+                return (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600">Items total</span>
+                      <span className="font-semibold text-slate-900">Rs {subtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between">
+                      <span className="text-slate-600">Delivery charge</span>
+                      <span className="font-semibold text-slate-900">Rs {deliveryCharge.toFixed(2)}</span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2">
+                      <span className="font-semibold text-slate-900">Total</span>
+                      <span className="font-bold text-slate-900">Rs {total.toFixed(2)}</span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">Final GST and pricing multipliers are calculated after review.</p>
+                  </>
+                );
+              })()}
             </div>
-
-            {designFile ? <p className="mt-2 text-xs text-slate-600">Selected: {designFile.name}</p> : null}
           </div>
 
           <div className="rounded bg-white p-4 shadow-sm">
@@ -418,13 +578,6 @@ export default function CheckoutPage() {
                 </button>
               ))}
             </div>
-            <textarea
-              className="mt-3 w-full rounded border p-2 text-sm"
-              rows={3}
-              placeholder="Order notes"
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-            />
           </div>
 
           <button
@@ -435,13 +588,6 @@ export default function CheckoutPage() {
             {placingOrder ? "Placing order..." : "Place Order"}
           </button>
         </form>
-
-        <aside className="rounded bg-white p-4 shadow-sm">
-          <h2 className="text-lg font-semibold">Summary</h2>
-          <p className="mt-2 text-sm text-slate-600">Items: {checkoutRows.length}</p>
-          <p className="mt-1 text-sm text-slate-600">Subtotal: Rs {subtotal.toFixed(2)}</p>
-          <p className="mt-3 text-xs text-slate-500">GST and delivery will be calculated after review.</p>
-        </aside>
       </div>
     </section>
   );

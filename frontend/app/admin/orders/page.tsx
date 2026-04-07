@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { API_BASE_URL, apiFetch } from "@/lib/api";
 import { Order } from "@/lib/types";
 
 const statuses = ["PENDING", "IN_REVIEW", "PRINTING", "COMPLETED", "DELIVERED"] as const;
@@ -23,6 +23,7 @@ export default function AdminOrdersPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | (typeof statuses)[number]>("ALL");
   const [sortMode, setSortMode] = useState<SortMode>("latest");
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   async function loadOrders() {
     setLoading(true);
@@ -63,6 +64,10 @@ export default function AdminOrdersPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Payment update failed");
     }
+  }
+
+  function toggleExpanded(orderId: string) {
+    setExpanded((prev) => ({ ...prev, [orderId]: !prev[orderId] }));
   }
 
   const filteredOrders = useMemo(() => {
@@ -175,52 +180,199 @@ export default function AdminOrdersPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredOrders.map((order) => (
-                <tr key={order.id} className="border-t border-slate-200">
-                  <td className="px-4 py-3 font-medium text-slate-900">#{order.id.slice(-8)}</td>
-                  <td className="px-4 py-3 text-slate-700">
-                    {new Date(order.createdAt).toLocaleDateString("en-IN", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric"
-                    })}
-                  </td>
-                  <td className="px-4 py-3 text-slate-700">{order.user?.name || "-"}</td>
-                  <td className="px-4 py-3 text-slate-700">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span>{order.payment?.status || "N/A"}</span>
-                      {order.payment?.provider === "CASH" && order.payment.status === "PENDING" ? (
+              {filteredOrders.map((order) => {
+                const isOpen = !!expanded[order.id];
+                const uploadsBase = `${API_BASE_URL.replace(/\/api$/, "")}/uploads`;
+
+                return (
+                  <>
+                    <tr key={order.id} className="border-t border-slate-200 align-top">
+                      <td className="px-4 py-3 font-medium text-slate-900">
                         <button
                           type="button"
-                          className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700"
-                          onClick={() => void markCashPaid(order.id)}
+                          className="text-left hover:underline"
+                          onClick={() => toggleExpanded(order.id)}
                         >
-                          Mark Paid
+                          #{order.id.slice(-8)}
                         </button>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 font-medium text-slate-900">Rs {Number(order.totalAmount).toFixed(2)}</td>
-                  <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${orderStatusClasses[order.status]}`}>
-                      {order.status.replace("_", " ")}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <select
-                      className="rounded-lg border border-slate-300 bg-white p-2 text-sm"
-                      value={order.status}
-                      onChange={(event) => updateStatus(order.id, event.target.value as (typeof statuses)[number])}
-                    >
-                      {statuses.map((status) => (
-                        <option key={status} value={status}>
-                          {status}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                </tr>
-              ))}
+                        <p className="mt-1 text-xs text-slate-500">{order.items?.length || 0} item(s)</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {new Date(order.createdAt).toLocaleDateString("en-IN", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric"
+                        })}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        <p className="font-medium text-slate-900">{order.user?.name || "-"}</p>
+                        <p className="text-xs text-slate-500">{order.user?.email || ""}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{order.payment?.status || "N/A"}</span>
+                          <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
+                            {order.payment?.provider || "—"}
+                          </span>
+                          {order.payment?.provider === "CASH" && order.payment.status === "PENDING" ? (
+                            <button
+                              type="button"
+                              className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700"
+                              onClick={() => void markCashPaid(order.id)}
+                            >
+                              Mark Paid
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-slate-900">Rs {Number(order.totalAmount).toFixed(2)}</td>
+                      <td className="px-4 py-3">
+                        <span className={`rounded-full px-2 py-1 text-xs font-semibold ${orderStatusClasses[order.status]}`}>
+                          {order.status.replace("_", " ")}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <select
+                            className="rounded-lg border border-slate-300 bg-white p-2 text-sm"
+                            value={order.status}
+                            onChange={(event) => updateStatus(order.id, event.target.value as (typeof statuses)[number])}
+                          >
+                            {statuses.map((status) => (
+                              <option key={status} value={status}>
+                                {status}
+                              </option>
+                            ))}
+                          </select>
+                          <button type="button" className="rounded border px-2 py-1 text-xs" onClick={() => toggleExpanded(order.id)}>
+                            {isOpen ? "Hide" : "View"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {isOpen ? (
+                      <tr key={`${order.id}-details`} className="border-t border-slate-200 bg-white">
+                        <td colSpan={7} className="px-4 py-4">
+                          <div className="space-y-4">
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Order notes</p>
+                              <p className="mt-2 text-sm text-slate-800 whitespace-pre-line">
+                                {order.notes || "—"}
+                              </p>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Items</p>
+                              <div className="mt-3 space-y-3">
+                                {order.items.map((item) => {
+                                  const product = item.product;
+                                  const media = product?.media || [];
+                                  const firstImage = media.find((m) => m.fileType === "IMAGE") || media[0] || null;
+                                  const lineTotal = Number(item.lineTotal);
+                                  const designFiles = item.designFiles || [];
+
+                                  return (
+                                    <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-3">
+                                      <div className="grid gap-3 sm:grid-cols-[88px_1fr]">
+                                        <div className="h-20 w-22 overflow-hidden rounded bg-slate-100">
+                                          {firstImage ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img
+                                              src={`${uploadsBase}/${firstImage.filePath}`}
+                                              alt={product?.name || "Product"}
+                                              className="h-full w-full object-cover"
+                                              loading="lazy"
+                                            />
+                                          ) : null}
+                                        </div>
+                                        <div>
+                                          <div className="flex flex-wrap items-start justify-between gap-2">
+                                            <div className="min-w-0">
+                                              <p className="text-sm font-semibold text-slate-900">
+                                                {product?.name || item.productId}
+                                              </p>
+                                              {product?.slug ? (
+                                                <p className="text-xs text-slate-500">/{product.slug}</p>
+                                              ) : null}
+                                            </div>
+                                            <div className="text-right">
+                                              <p className="text-xs text-slate-500">Qty</p>
+                                              <p className="text-sm font-semibold text-slate-900">{item.quantity}</p>
+                                            </div>
+                                            <div className="text-right">
+                                              <p className="text-xs text-slate-500">Line total</p>
+                                              <p className="text-sm font-semibold text-slate-900">
+                                                Rs {Number.isFinite(lineTotal) ? lineTotal.toFixed(2) : "0.00"}
+                                              </p>
+                                            </div>
+                                          </div>
+
+                                          {item.notes ? (
+                                            <div className="mt-2 rounded border border-slate-200 bg-slate-50 p-2">
+                                              <p className="text-xs font-semibold text-slate-600">Item notes</p>
+                                              <p className="mt-1 text-xs text-slate-700 whitespace-pre-line">{item.notes}</p>
+                                            </div>
+                                          ) : null}
+
+                                          {designFiles.length ? (
+                                            <div className="mt-3">
+                                              <p className="text-xs font-semibold text-slate-600">Design files</p>
+                                              <div className="mt-2 grid grid-cols-3 gap-2">
+                                                {designFiles.map((file) => {
+                                                  const url = `${uploadsBase}/${file.filePath}`;
+                                                  const isImage = file.mimeType.startsWith("image/");
+                                                  return isImage ? (
+                                                    <a key={file.id} href={url} target="_blank" rel="noreferrer">
+                                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                      <img
+                                                        src={url}
+                                                        alt="Design"
+                                                        className="h-20 w-full rounded object-cover"
+                                                        loading="lazy"
+                                                      />
+                                                    </a>
+                                                  ) : (
+                                                    <a
+                                                      key={file.id}
+                                                      href={url}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="flex h-20 items-center justify-center rounded border border-slate-200 bg-white text-[11px] font-semibold text-[#2874f0]"
+                                                    >
+                                                      View file
+                                                    </a>
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+                                          ) : item.designFilePath ? (
+                                            <div className="mt-3">
+                                              <p className="text-xs font-semibold text-slate-600">Design file</p>
+                                              <a
+                                                className="mt-1 inline-block text-xs font-semibold text-[#2874f0]"
+                                                href={`${uploadsBase}/${item.designFilePath}`}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                              >
+                                                View file
+                                              </a>
+                                            </div>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </>
+                );
+              })}
               {filteredOrders.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">
